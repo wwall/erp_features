@@ -10,7 +10,7 @@ def createFileDb(path,base) {
     utils = new Utils()
 
 
-    returnCode = utils.cmd("oscript one_script_tools/dbcreator.os  -base ${path}")
+    returnCode = utils.cmd("oscript ${env.WORKSPACE}/one_script_tools/dbcreator.os  -base ${path}")
     if (returnCode != 0) {
         utils.raiseError("Возникла ошибка при создании базы ${base} передан путь ${path} ")
     }
