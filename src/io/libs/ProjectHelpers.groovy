@@ -1,5 +1,22 @@
 package io.libs
 
+
+// Создает базу в указаном каталоге
+//
+// Параметры:
+//  basepath - номер платформы 1С, например 8.3.12.1529
+//  base - имя базы на сервере 1c и sql
+def createFileDb(path,base) {
+    utils = new Utils()
+
+
+    returnCode = utils.cmd("oscript one_script_tools/dbcreator.os  -base ${path}")
+    if (returnCode != 0) {
+        utils.raiseError("Возникла ошибка при создании базы ${base} передан путь ${path} ")
+    }
+}
+
+
 // Создает базу в кластере через RAS или пакетный режим. Для пакетного режима есть возможность создать базу с конфигурацией
 //
 // Параметры:
@@ -60,6 +77,11 @@ def unlocking1cBase(connString, admin1cUsr, admin1cPwd) {
 def getConnString(server1c, infobase, agent1cPort) {
     return "/S${server1c}:${agent1cPort}\\${infobase}"
 }
+
+def getConnStringFile(path) {
+    return "/F${path}"
+}
+
 
 // Удаляет базу из кластера через powershell.
 //

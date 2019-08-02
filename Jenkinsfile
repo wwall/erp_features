@@ -17,19 +17,8 @@ pipeline {
 
     parameters {
         string(defaultValue: "${env.jenkinsAgent}", description: 'Нода дженкинса, на которой запускать пайплайн. По умолчанию master', name: 'jenkinsAgent')
-        string(defaultValue: "${env.server1c}", description: 'Имя сервера 1с, по умолчанию localhost', name: 'server1c')
-        string(defaultValue: "${env.server1cPort}", description: 'Порт рабочего сервера 1с. По умолчанию 1540. Не путать с портом агента кластера (1541)', name: 'server1cPort')
-        string(defaultValue: "${env.agent1cPort}", description: 'Порт агента кластера 1с. По умолчанию 1541', name: 'agent1cPort')
         string(defaultValue: "${env.platform1c}", description: 'Версия платформы 1с, например 8.3.12.1685. По умолчанию будет использована последня версия среди установленных', name: 'platform1c')
-        string(defaultValue: "${env.serverSql}", description: 'Имя сервера MS SQL. По умолчанию localhost', name: 'serverSql')
-        string(defaultValue: "${env.admin1cUser}", description: 'Имя администратора с правом открытия вншних обработок (!) для базы тестирования 1с Должен быть одинаковым для всех баз', name: 'admin1cUser')
-        string(defaultValue: "${env.admin1cPwd}", description: 'Пароль администратора базы тестирования 1C. Должен быть одинаковым для всех баз', name: 'admin1cPwd')
-        string(defaultValue: "${env.sqlUser}", description: 'Имя администратора сервера MS SQL. Если пустой, то используется доменная  авторизация', name: 'sqlUser')
-        string(defaultValue: "${env.sqlPwd}", description: 'Пароль администратора MS SQL.  Если пустой, то используется доменная  авторизация', name: 'sqlPwd')
         string(defaultValue: "${env.templatebases}", description: 'Список баз для тестирования через запятую. Например work_erp,work_upp', name: 'templatebases')
-        string(defaultValue: "${env.storages1cPath}", description: 'Необязательный. Пути к хранилищам 1С для обновления копий баз тестирования через запятую. Число хранилищ (если указаны), должно соответствовать числу баз тестирования. Например D:/temp/storage1c/erp,D:/temp/storage1c/upp', name: 'storages1cPath')
-        string(defaultValue: "${env.storageUser}", description: 'Необязательный. Администратор хранилищ  1C. Должен быть одинаковым для всех хранилищ', name: 'storageUser')
-        string(defaultValue: "${env.storagePwd}", description: 'Необязательный. Пароль администратора хранилищ 1c', name: 'storagePwd')
     }
 
     agent {
@@ -45,18 +34,6 @@ pipeline {
                 timestamps {
                     script {
                         templatebasesList = utils.lineToArray(templatebases.toLowerCase())
-                        storages1cPathList = utils.lineToArray(storages1cPath.toLowerCase())
-
-                        if (storages1cPathList.size() != 0) {
-                            assert storages1cPathList.size() == templatebasesList.size()
-                        }
-
-                        server1c = server1c.isEmpty() ? "localhost" : server1c
-                        serverSql = serverSql.isEmpty() ? "localhost" : serverSql
-                        server1cPort = server1cPort.isEmpty() ? "1540" : server1cPort
-                        agent1cPort = agent1cPort.isEmpty() ? "1541" : agent1cPort
-                        env.sqlUser = sqlUser.isEmpty() ? "sa" : sqlUser
-                        testbase = null
 
                         // создаем пустые каталоги
                         dir ('build') {
@@ -73,43 +50,14 @@ pipeline {
 
                         for (i = 0;  i < templatebasesList.size(); i++) {
                             templateDb = templatebasesList[i]
-                            storage1cPath = storages1cPathList[i]
                             testbase = "test_${templateDb}"
-                            testbaseConnString = projectHelpers.getConnString(server1c, testbase, agent1cPort)
-                            backupPath = "${env.WORKSPACE}/build/temp_${templateDb}_${utils.currentDateStamp()}"
+			    testbasepath = "build/${testbase}"
 
-                            // 1. Удаляем тестовую базу из кластера (если он там была) и очищаем клиентский кеш 1с
-                            dropDbTasks["dropDbTask_${testbase}"] = dropDbTask(
-                                server1c, 
-                                server1cPort, 
-                                serverSql, 
-                                testbase, 
-                                admin1cUser, 
-                                admin1cPwd,
-                                sqluser,
-                                sqlPwd
-                            )
-                            // 2. Делаем sql бекап эталонной базы, которую будем загружать в тестовую базу
-                            backupTasks["backupTask_${templateDb}"] = backupTask(
-                                serverSql, 
-                                templateDb, 
-                                backupPath,
-                                sqlUser,
-                                sqlPwd
-                            )
-                            // 3. Загружаем sql бекап эталонной базы в тестовую
-                            restoreTasks["restoreTask_${testbase}"] = restoreTask(
-                                serverSql, 
-                                testbase, 
-                                backupPath,
-                                sqlUser,
-                                sqlPwd
-                            )
+                            testbaseConnString = projectHelpers.getConnStringFile(testbasepath)
+
                             // 4. Создаем тестовую базу кластере 1С
-                            createDbTasks["createDbTask_${testbase}"] = createDbTask(
-                                "${server1c}:${agent1cPort}",
-                                serverSql,
-                                platform1c,
+                            createDbTasks["createDbTask_${testbase}"] = createFileDbTask(
+                                testbasepath,
                                 testbase
                             )
                             // 5. Обновляем тестовую базу из хранилища 1С (если применимо)
@@ -123,6 +71,7 @@ pipeline {
                                 admin1cUser, 
                                 admin1cPwd
                             )
+
                             // 6. Запускаем внешнюю обработку 1С, которая очищает базу от всплывающего окна с тем, что база перемещена при старте 1С
                             runHandlers1cTasks["runHandlers1cTask_${testbase}"] = runHandlers1cTask(
                                 testbase, 
@@ -132,9 +81,6 @@ pipeline {
                             )
                         }
 
-                        parallel dropDbTasks
-                        parallel backupTasks
-                        parallel restoreTasks
                         parallel createDbTasks
                         parallel updateDbTasks
                         parallel runHandlers1cTasks
@@ -202,6 +148,23 @@ def dropDbTask(server1c, server1cPort, serverSql, infobase, admin1cUser, admin1c
                 def utils = new Utils()
 
                 projectHelpers.dropDb(server1c, server1cPort, serverSql, infobase, admin1cUser, admin1cPwd, sqluser, sqlPwd)
+            }
+        }
+    }
+}
+
+
+
+def createFileDbTask(basepath, infobase) {
+    return {
+        stage("Создание базы ${infobase}") {
+            timestamps {
+                def projectHelpers = new ProjectHelpers()
+                try {
+                    projectHelpers.createFileDb(basepath, infobase)
+                } catch (excp) {
+                    echo "Error happened when creating base ${infobase}. Probably base already exists in the ibases.v8i list. Skip the error"
+                }
             }
         }
     }
