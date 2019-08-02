@@ -15,7 +15,7 @@ import groovy.json.JsonSlurper
 //
 def cmd(command, workDir = "") {
     
-    if (!workDir.isEmpty()) {
+    if (workDir.isEmpty()) {
         command = "${getWorkspaceLine(workDir)} ${command}"
     }
 
